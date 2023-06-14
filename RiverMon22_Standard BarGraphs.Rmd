@@ -2,6 +2,8 @@
 title: "RiverMonitoring_22"
 output: html_document
 date: "2023-06-13"
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -13,10 +15,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Data
 - general water chemistry extracted from Aquamonitor by Øyvind
 - historic data! (2017-2021): Combining 2021-5yr data with data from 2021 and excluding 2016
-  - TSM = SPM (?)
 - what about Hg data?
 - what about DOM UV-Vis abs data?
-
 - Qs data
 
 ### Data aspects to consider
@@ -46,7 +46,11 @@ dLimitx <- function(v){
   n <- (sum(isLimit)/(sum(!isLimit)+sum(isLimit)))*100
   v[isLimit] <- as.numeric(gsub("<(.*)", "\\1", v[isLimit]))*(100-n)/100 #gsub(pattern, replacement, x) for substitution
   as.numeric(v)
-  }
+}
+
+fmt_dcimals <- function(decimals=1){
+  function(x) format(x,nsmall = decimals,scientific = FALSE)
+}
 ```
 
 *Data files* (to be updated for 2022)
@@ -71,31 +75,42 @@ dLimitx <- function(v){
 In Notepad, I check that the csv-file is saved with 'Encoding: ANSI'.
 In RStudio: Tools / Options / Default text encoding: ISO8859-1, https://stackoverflow.com/questions/17271849/reading-special-characters-like-%C3%86%C3%98%C3%85-into-r-rstudio
 
+!! When problem with the norwegian letters, run the following in the console: Sys.setlocale(locale="no_NO") 
+
 Load the two datafiles of current year and previous years data 
 ```{r echo = T, results = 'hide'}
 five <- read.table("Av5year_22.txt", header=TRUE, sep="\t", na.string=c(""))
 a2022 <- read.table("ElvO_2022_Gen vannkjemi_V02.txt", header=TRUE, sep="\t", na.string=c(""))
+
 ```
 
 Fix names of stations that have been misspelled by excel formatting
 - problem with letters æ, ø, å
 - some stations need another name, eg. Vegårselva
 ```{r echo = T, results = 'hide'}
-names(a2022)[2] <- "Station.name"
-a2022$Station.name <- revalue(a2022$Station.name, c("M <e5> lselva" = "Målselva", "Numedalsl<e5>gen"="Numedalslågen", "Veg<e5>rdselva"="Storelva"))
-five$Station.name <- revalue(five$Station.name, c("M<e5>lselva" = "Målselva", "Numedalsl<e5>gen"="Numedalslågen", "Veg<e5>rdselva"="Storelva"))
+colnames(a2022)[which(names(a2022) == "StationName")] <- "Station.name"
+a2022$Station.name <- revalue(a2022$Station.name, c("Vegårdselva"="Storelva"))
+five$Station.name <- revalue(five$Station.name, c("Vegårdselva"="Storelva"))
+
+a2022$Station.name <- revalue(a2022$Station.name, c("Målselv"="Målselva"))
+five$Station.name <- revalue(five$Station.name, c("Målselv"="Målselva"))
+
+a2022$Station.name <- revalue(a2022$Station.name, c("Tanaelva"="Tana"))
+five$Station.name <- revalue(five$Station.name, c("Tanaelva"="Tana"))
+
+five$Station.name <- revalue(five$Station.name, c("Vikdalselva"="Vikedalselva"))
 ```
-Running the LOD function
+Running the LOD function, 
+For the 5y average, the fomrmula works not by year and station. Might be sufficient for the figure. Or, try to adjust?
 ```{r echo = T, results = 'hide'}
-Dxa2022y <- cbind(a2022[2:3], apply(a2022[,-c(1:2), drop=F],2, dLimitx))
-Dxfivey <- cbind(five[3:4], apply(five[,-c(1:4), drop=F],2, dLimitx))
+Dxa2022y <- cbind(a2022[2:3], apply(a2022[,-c(1:3), drop=F],2, dLimitx))
+Dxfivey <-  cbind(five[3:4], apply(five[,-c(1:4), drop=F],2, dLimitx))
 ```
 Replacing columnnames for 2020 data (from Aquamonitor) to match 5-year data
 ```{r}
 # Convert Si to SiO2 in 2020-data
 #Dxa2020y$SiO2 <- Dxa2020y$Si*(60.0835/28.0855)
 # Change names for unity
-
 names(Dxa2022y)[names(Dxa2022y) == 'TSM'] <- 'SPM'
 ```
 
@@ -133,11 +148,9 @@ names(foxy) <- c("Station.name", "chem", "xmean", "xsd")
 foxy$year <- "5-year mean"
 foxy = foxy %>% relocate(year, .after = "Station.name")
 ```
-
 Summarising the 2020 data, why not possible to add n?
 ```{r}
-Dxa2022y <- Dxa2022y[-(3)]
-names(Dxa2022y)[names(Dxa2022y) == 'TURB860'] <- 'Turbiditet'
+#names(Dxa2022y)[names(Dxa2022y) == 'TURB860'] <- 'Turbiditet'
 
 dx22 <- Dxa2022y %>%
   group_by(Station.name) %>%
@@ -160,21 +173,22 @@ df.sum22 = df.sum22 %>% relocate(year, .after = "Station.name")
 Add the two together and make new summary table. select only those parameters to be used for the automatic plotting
 ```{r}
 # 6) Merge the two datasets
-
 All <- rbind(df.sum22, foxy)
 #only those parameters with regular bargraphs, nothing special
-dfsum2 = All %>% filter(str_detect(chem,"pH|Ca|Turbiditet|SPM|SiO2|TOC|DOC|TOTN|As|Pb|Cd|Cu|Zn|Cr|Ni"))
+dfsum2 = All %>% filter(str_detect(chem,"Ca|Turbiditet|SPM|SiO2|TOC|TOTN|TOTP|As|Pb|Cd|Cu|Zn|Cr|PO4"))
 ```
 
 Use the following for making automatised figures with correct axis-titles. BUT make sure to only include those variables you will plot. 
 ```{r}
 #try TO MAKE NICER TITLES
-dfsum2 <- All %>%
+dfsum3 <- dfsum2 %>%
   mutate(title = case_when(
     chem== "Turbiditet" ~ "Turbidity",
     chem== "SPM" ~ "Suspended particulate matter",
     chem== "TOC" ~ "Total organic carbon",
     chem== "TOTN" ~ "Total nitrogen",
+    chem== "TOTP" ~ "Total phosphorous",
+    chem== "PO4.P" ~ "Phosphate",
     chem== "SiO2" ~ "Silica",
     chem== "As" ~ "Arsenic",
     chem== "Pb" ~ "Lead",
@@ -182,12 +196,15 @@ dfsum2 <- All %>%
     chem== "Cu" ~ "Copper",
     chem== "Zn" ~ "Zinc",
     chem== "Cr" ~ "Chromium",
+    chem== "Ca" ~ "Calcium",
 )) %>%
   mutate(abbr = case_when(
     chem== "Turbiditet" ~ "TURB (FNU)",
     chem== "SPM" ~ "SPM (mg/L)",
     chem== "TOC" ~ "TOC (mg/L)",
     chem== "TOTN" ~ "TOTN (µg/L)",
+    chem== "TOTP" ~ "TOTP (µg/L)",
+    chem== "PO4.P" ~ "PO4.P (µg/L)",
     chem== "SiO2" ~ "SiO2 (mg/L)",
     chem== "As" ~ "As (µg/L)",
     chem== "Pb" ~ "Pb (µg/L)",
@@ -195,15 +212,13 @@ dfsum2 <- All %>%
     chem== "Cu" ~ "Cu (µg/L)",
     chem== "Zn" ~ "Zn (µg/L)",
     chem== "Cr" ~ "Cr (µg/L)",
+    chem== "Ca" ~ "Ca (mg/L)",
   ))
 ```
 
 Set order of station names and legend titles
 ```{r}
-dfsum2$Station.name <- revalue(dfsum2$Station.name, c("Numedalsl<e5>gen" ="Numedalslaagen", "M<e5>lselva"="Målselva"))
-
-
-dfsum3x <- dfsum2 %>% 
+dfsum3x <- dfsum3 %>% 
   group_by(chem, year) %>% 
   mutate(Station.name = factor(Station.name, # put education levels in logical order
                                levels = c("Glomma", "Alna", "Drammenselva", "Numedalslågen", "Skienselva",
@@ -213,10 +228,10 @@ dfsum3x <- dfsum2 %>%
 
 
 #title, abbr
-dfsum3 <- dfsum2 %>% 
+dfsum3 <- dfsum3x %>% 
   group_by(chem, year) %>% 
            mutate(year=factor(year,
-                     levels=c("5-year mean", "2020 mean")))
+                     levels=c("5-year mean", "2022 mean")))
 ```
  
 Automatised plots for variables not requiering individual adaptations such as e.g. facets
@@ -244,10 +259,10 @@ for (i in seq_along(chems)){
              aes(y = xmean))+
     geom_errorbar(data = filter(dfsum3, chem == chems[i]),
                   aes(x=Station.name, ymin=pmax(xmean-xsd, 0), ymax=xmean+xsd), #pmax+++ added to not show negative sd
-                  width=.4,size=0.4, position=position_dodge(width=0.8), col="black")+
+                  width=.4,linewidth=0.4, position=position_dodge(width=0.8), col="black")+
     scale_fill_manual(name="year", 
                       values=c("5-year mean" = "orange",
-                               "2020 mean" = "dodgerblue2"))+
+                               "2022 mean" = "dodgerblue2"))+
     theme_light()+
     theme(axis.text.y = element_text(size= 16, colour="black"),
           axis.title.x = element_blank(),
@@ -261,7 +276,8 @@ for (i in seq_along(chems)){
           strip.background = element_blank(),
           strip.text.x = element_blank())+
     theme(legend.position="top")+
-    labs(title = titles[i], y=abbrs[i])
+    labs(title = titles[i], y=abbrs[i])+
+    scale_y_continuous(labels = fmt_dcimals(1))
   
 print(ploy)
 
@@ -280,18 +296,7 @@ ggsave(filename = paste0("output7/",
 
 ```
 
-
-- faceting: using letters "Y" and "N" to separets Station.names to go in facet or no
-
-```{r}
-#To make facet for those of separate y-axis
-dfsum3$Facet <- ifelse(dfsum3$Station.name == "Alna", 'Y',
-                       ifelse(dfsum3$Station.name == "Orreelva", 'Y', "N"))
-```
-
-The plots are made manually since there are not that many plots and since different Station.names will be faceted.
-In the ggplot you need to specify the variable and the axis texts. 
-This option can also be used for pH which normally require the y-axis to not start at zero. Remove facet in ggplot for pH. 
+Now pH needs a set y-axis, not starting with zero
 
 ```{r}
 #To make plots individually to individual optimization
@@ -301,7 +306,7 @@ fmt_dcimals <- function(decimals=1){
 }
 
 
-plot20 <- ggplot(subset(dfsum3, chem %in% c("Ni")) , aes(x=Station.name, y=xmean, fill=year))  +
+pH22 <- ggplot(subset(dfsum3, chem %in% c("pH")) , aes(x=Station.name, y=xmean, fill=year))  +
   geom_col( width=0.8, position=position_dodge())+
   geom_errorbar(aes(x=Station.name, ymin=pmax(xmean-xsd, 0), ymax=xmean+xsd),
                 width=.4,size=0.4, position=position_dodge(width=0.8), col="black")+
@@ -319,21 +324,72 @@ plot20 <- ggplot(subset(dfsum3, chem %in% c("Ni")) , aes(x=Station.name, y=xmean
         strip.background = element_blank(),
         strip.text.x = element_blank())+
   theme(legend.position="top")+
-  labs(title = "Nickel", x = "", y = "Ni (µg/L)")
+  labs(title = "pH", x = "", y = "pH units")+
+  coord_cartesian(ylim = c(5, 8.5))+
+  scale_y_continuous(breaks=c(5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5), labels = fmt_dcimals(1))
+
+ggsave(filename = paste0("output7/",
+                         chems[i],
+                         "_plot.png"),
+       plot = pH22,
+       width = 11, height = 8.5, units = "in")
+
+```
+
+
+- faceting: using letters "Y" and "N" to separets Station.names to go in facet or no
+
+```{r}
+#To make facet for those of separate y-axis
+dfsum3$Facet <- ifelse(dfsum3$Station.name == "Alna", 'Y',
+                       ifelse(dfsum3$Station.name == "Orreelva", 'Y', "N"))
+```
+
+The plots are made manually since there are not that many plots and since different Station.names will be faceted.
+In the ggplot you need to specify the variable and the axis texts. 
+
+- TOTP
+```{r}
+#To make plots individually to individual optimization
+#Function for å definere antall siffer i akse
+fmt_dcimals <- function(decimals=1){
+  function(x) format(x,nsmall = decimals,scientific = FALSE)
+}
+
+TOTP22 <- ggplot(subset(dfsum3, chem %in% c("TOTP")) , aes(x=Station.name, y=xmean, fill=year))  +
+  geom_col( width=0.8, position=position_dodge())+
+  geom_errorbar(aes(x=Station.name, ymin=pmax(xmean-xsd, 0), ymax=xmean+xsd),
+                width=.4,size=0.4, position=position_dodge(width=0.8), col="black")+
+  theme_light()+
+  scale_fill_manual(values = c("orange", "dodgerblue2"))+
+  theme(axis.text.y = element_text(size= 16, colour="black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=20, margin=margin(0,20,0,0)),
+        axis.text.x = element_text(size = 16, angle=45, hjust=1,  colour="black"),
+        legend.title = element_blank(),
+        legend.text=element_text(size=16),
+        legend.spacing.x = unit(0.2, 'cm'),
+        plot.title = element_text(size = 24, hjust = 0.5),
+        panel.grid.major.x = element_blank(),
+        strip.background = element_blank(),
+        strip.text.x = element_blank())+
+  theme(legend.position="top")+
+  labs(title = "Total phosphorous", x = "", y = "TOTP (µg/L)")+
   facet_wrap(.~Facet, scales="free")
+    
 ```
 
 Some trixing needs to be done to make the facets have the approperiate width
 
 ```{r}
-gp <- ggplotGrob(plot20)
+gp <- ggplotGrob(TOTP22)
 # optional: take a look at the grob object's layout
 gtable::gtable_show_layout(gp)
 
 # get gtable columns corresponding to the facets (5 & 9, in this case)
 facet.columns <- gp$layout$l[grepl("panel", gp$layout$name)]
 # get the number of unique x-axis values per facet (1 & 3, in this case)
-x.var <- sapply(ggplot_build(plot20)$layout$panel_scales_x,
+x.var <- sapply(ggplot_build(TOTP22)$layout$panel_scales_x,
                 function(l) length(l$range$range))
 
 # change the relative widths of the facet columns based on
@@ -346,16 +402,72 @@ plppy = grid::grid.draw(gp)
 print(plppy)
 print(gp)
 
-
-ggsave(filename = "Ni_20_Facet.png",
+ggsave(filename = "TOTP22_Facet.png",
        plot = plot20,
        width = 11, height = 8.5, units = "in")
 
 ```
 
-Some plotting variables that might be needed: 
+- Phosphate
+```{r}
+#To make plots individually to individual optimization
+#Function for å definere antall siffer i akse
+fmt_dcimals <- function(decimals=1){
+  function(x) format(x,nsmall = decimals,scientific = FALSE)
+}
 
-- Subscript in axis title: "y = expression(paste("TOTP (",mu,"g/L)")"
+PO422 <- ggplot(subset(dfsum3, chem %in% c("PO4.P")) , aes(x=Station.name, y=xmean, fill=year))  +
+  geom_col( width=0.8, position=position_dodge())+
+  geom_errorbar(aes(x=Station.name, ymin=pmax(xmean-xsd, 0), ymax=xmean+xsd),
+                width=.4,size=0.4, position=position_dodge(width=0.8), col="black")+
+  theme_light()+
+  scale_fill_manual(values = c("orange", "dodgerblue2"))+
+  theme(axis.text.y = element_text(size= 16, colour="black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=20, margin=margin(0,20,0,0)),
+        axis.text.x = element_text(size = 16, angle=45, hjust=1,  colour="black"),
+        legend.title = element_blank(),
+        legend.text=element_text(size=16),
+        legend.spacing.x = unit(0.2, 'cm'),
+        plot.title = element_text(size = 24, hjust = 0.5),
+        panel.grid.major.x = element_blank(),
+        strip.background = element_blank(),
+        strip.text.x = element_blank())+
+  theme(legend.position="top")+
+  labs(title = "Phosphate", x = "", y =expression(paste("PO"[4]," (µg/L)")))+
+  facet_wrap(.~Facet, scales="free")
+   
+```
+
+Some trixing needs to be done to make the facets have the approperiate width
+
+```{r}
+gp <- ggplotGrob(PO422)
+# optional: take a look at the grob object's layout
+gtable::gtable_show_layout(gp)
+
+# get gtable columns corresponding to the facets (5 & 9, in this case)
+facet.columns <- gp$layout$l[grepl("panel", gp$layout$name)]
+# get the number of unique x-axis values per facet (1 & 3, in this case)
+x.var <- sapply(ggplot_build(PO422)$layout$panel_scales_x,
+                function(l) length(l$range$range))
+
+# change the relative widths of the facet columns based on
+# how many unique x-axis values are in each facet
+gp$widths[facet.columns] <- gp$widths[facet.columns] * x.var
+
+# plot result
+plppy = grid::grid.draw(gp)
+
+print(plppy)
+print(gp)
+
+ggsave(filename = "PO422_Facet.png",
+       plot = PO422,
+       width = 11, height = 8.5, units = "in")
+
+```
+Some plotting variables that might be needed: 
 - scaling of y-axis: "coord_cartesian(ylim = c(0.0, 0.18))" and/or "scale_y_continuous(breaks=c(0,0.03, 0.06, 0.09, 0.12, 0.15, 0.18), labels = fmt_dcimals(1))" 
 
 
@@ -444,22 +556,22 @@ Variables: TOC+DOC,
 Calculate the fractions that will be plotted. For the 2020 data only. 
 
 ```{r}
-Dxa2020y$POC = Dxa2020y$TOC - Dxa2020y$DOC
-Dxa2020y$TPP = Dxa2020y$TOTP - Dxa2020y$Pb.filt
-Dxa2020y$Org.P = Dxa2020y$TOTP - Dxa2020y$PO4.P
-Dxa2020y$Org.N = Dxa2020y$TOTN - Dxa2020y$NO3.N - Dxa2020y$NH4.N
-Dxa2020y$TDN = Dxa2020y$TOTN - Dxa2020y$Nitrogen.part
+Dxa2022y$POC = Dxa2022y$TOC - Dxa2022y$DOC
+Dxa2022y$TPP = Dxa2022y$TOTP - Dxa2022y$PO4.P
+Dxa2022y$Org.P = Dxa2022y$TOTP - Dxa2022y$PO4.P
+Dxa2022y$Org.N = Dxa2022y$TOTN - Dxa2022y$NO3.N - Dxa2022y$NH4.N
+Dxa2022y$TDN = Dxa2022y$TOTN - Dxa2022y$Nitrogen.part
 ```
 
 Make new summary table
 
 ```{r}
 #Negative POC values replaced by zero
-Dxa2020y$POC[Dxa2020y$POC < 0] <- 0       # Set negative values to 0
+Dxa2022y$POC[Dxa2022y$POC < 0] <- 0       # Set negative values to 0
 
-head(Dxa2020y)     
+head(Dxa2022y)     
 #MAKE summary tables of parameters, remember to expand the variable selection!
-df.sum <- Dxa2020y %>%
+df.sum <- Dxa2022y %>%
   group_by(Station.name) %>%
   select(TOC:TOTN, DOC:TOTP.F, TPP:TDN) %>% # select variables to summarise, from and to
   summarise(across(everything(), .f = list(mean = mean), na.rm = TRUE))
