@@ -1,0 +1,78 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview - River Monitoing 22 - DOM Quality 
+
+## Data
+- DOM quality indices
+- TOC needed
+- 5 year average and 2022 data
+
+```{r, results=FALSE, message=FALSE, warning=FALSE}
+#install.packages(c("dplyr", "ggplot2", "plyr", "Rmisc", "tidyverse", "lubridate", "stringr"))
+Packages <- c("plyr", "dplyr", "ggplot2",  "Rmisc", "tidyverse", "lubridate", "stringr", "tm")
+lapply(Packages, library, character.only = TRUE)
+```
+*Functions* 
+The following function will replace all "<LOD"
+- har det no å si om det er mellomrm mellom < og tallet?
+```{r echo = T, results = 'hide'}
+dLimitx <- function(v){
+  v <- as.character(v)
+  isLimit <- grepl("<", v)  #grepl() is a built-in R function looks for a smaller string of characters
+  n <- (sum(isLimit)/(sum(!isLimit)+sum(isLimit)))*100
+  v[isLimit] <- as.numeric(gsub("<(.*)", "\\1", v[isLimit]))*(100-n)/100 #gsub(pattern, replacement, x) for substitution
+  as.numeric(v)
+}
+
+fmt_dcimals <- function(decimals=1){
+  function(x) format(x,nsmall = decimals,scientific = FALSE)
+}
+```
+
+Load the two datafiles of current year and previous years data 
+```{r echo = T, results = 'hide'}
+Sys.setlocale(locale="no_NO") 
+A2021 <- read.table("Hovedelver_UVabs_fra Aquamonitor.txt", header=TRUE, sep="\t", na.string=c(""))
+A3yr <- read.table("UVabs data 2017-2020.txt", header=TRUE, sep="\t", na.string=c(""))
+
+C2021 <- read.table("copy_hovedelver_2021.txt", header=TRUE, sep="\t", na.string=c(""))
+C3yr <- read.table("DOC_4y.txt", header=TRUE, sep="\t", na.string=c(""))
+
+```
+
+### 1) Create the 5-yr average
+- Data 2017-2020 must be combined with 2021
+- Both UV-Vis abs and DOC data
+- 2022 UV vis data together with DOC
+
+```{r, create the 5-year avaerage}
+A3yr1 <- A3yr[ -c(7:8) ]
+AA <- rbind(A2021, A3yr1)
+```
+
+### 2) Calculate indices
+```{r, Calculate indices}
+
+```
+
+### 3) Make summaries for plotting
+```{r}
+
+```
+
+Prepare for plotting
+```{r}
+
+```
+
+PLOTTING
+```{r}
+
+```
+
